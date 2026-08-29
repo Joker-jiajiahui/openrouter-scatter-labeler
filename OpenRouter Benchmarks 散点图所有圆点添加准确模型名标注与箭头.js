@@ -6,6 +6,7 @@
 // @match        https://openrouter.ai/rankings*
 // @run-at       document-idle
 // @grant        none
+// @license      MIT
 // ==/UserScript==
 
 (function () {
@@ -22,7 +23,22 @@
     var hiddenNames = {};
     var customPos = {};
     var currentLabels = [];
-
+    var STORE_KEY = 'orl-scatter-labeler-v1';
+    function loadStore() {
+        try {
+            var raw = localStorage.getItem(STORE_KEY);
+            if (!raw) return;
+            var data = JSON.parse(raw);
+            if (data.pos) customPos = data.pos;
+            if (data.hidden) hiddenNames = data.hidden;
+            log('store loaded');
+        } catch (e) { log('load store error', e); }
+    }
+    function saveStore() {
+        try {
+            localStorage.setItem(STORE_KEY, JSON.stringify({ pos: customPos, hidden: hiddenNames }));
+        } catch (e) { log('save store error', e); }
+    }
     function log() {
         try { console.log.apply(console, [LOG].concat([].slice.call(arguments))); } catch (e) {}
     }
@@ -166,7 +182,11 @@
             function mu() {
                 window.removeEventListener('mousemove', mm);
                 window.removeEventListener('mouseup', mu);
-                if (moved) { customPos[entry.name] = [entry.cx, entry.cy]; log('label moved:', entry.name); }
+                if (moved) {
+                    customPos[entry.name] = [entry.cx / entry.W, entry.cy / entry.H];
+                    saveStore();
+                    log('label moved:', entry.name);
+                }
             }
             window.addEventListener('mousemove', mm);
             window.addEventListener('mouseup', mu);
@@ -177,6 +197,7 @@
             entry.g.style.display = 'none';
             entry.line.style.display = 'none';
             log('label hidden:', entry.name);
+            saveStore();
         });
     }
 
@@ -236,7 +257,7 @@
             var center = null;
 
             if (customPos[p.name]) {
-                center = { cx: customPos[p.name][0], cy: customPos[p.name][1] };
+                center = { cx: customPos[p.name][0] * W, cy: customPos[p.name][1] * H };
             } else {
                 var best = null;
                 var dists = [20, 32, 46, 62, 80];
@@ -263,7 +284,7 @@
                 center = best;
             }
 
-            var entry = { name: p.name, p: p, lw: lw, lh: lh, cx: center.cx, cy: center.cy };
+            var entry = { name: p.name, p: p, lw: lw, lh: lh, cx: center.cx, cy: center.cy, W: W, H: H };
             placed.push({ x: entry.cx - lw / 2, y: entry.cy - lh / 2, w: lw, h: lh });
 
             var line = document.createElementNS(NS, 'line');
@@ -318,6 +339,7 @@
         b.addEventListener('click', function () {
             hiddenNames = {};
             customPos = {};
+            try { localStorage.removeItem(STORE_KEY); } catch (e) {}
             removeOverlay();
             annotate();
             log('reset: show all labels');
@@ -355,6 +377,7 @@
         pendingTimer = setTimeout(function () { pendingTimer = null; annotate(); }, delay || 400);
     }
     function boot() {
+        loadStore();
         log('booted, version', VERSION);
         ensureResetBtn();
         setTimeout(autoPareto, 2000);
